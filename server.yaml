@@ -1,0 +1,10 @@
+messages:
+    hi:
+        ack: Computing response...
+        action: actions.sayhi
+        error: Unable to say hi.
+
+global:
+    server_port: 7040
+    bound_ip: 0.0.0.0
+    message_terminator: !!str \r\n

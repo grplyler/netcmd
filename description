@@ -1,0 +1,71 @@
+netcmd framework and application description
+
+Functionality:
+    netcmd provide a simple and easy to implement message, action, response
+    network protocol factory. You can easily define you own server ( and
+    eventually clients) in a simple .conf file format.
+
+    Using the yaml language, you can define what messages your server will listen for,
+    what action to take when that message is received (defined in a python module)
+    and what response should be returned to the client; either a simple message response
+    or a more complex dataset.
+
+    netcmd will use well known and easy to learn technologies such as YAML, and JSON to
+    script your servers to do what you want them to. Whether you wish to use netcmd as
+    a simple server utility or even a multilayer game server, its sure to fit you wide
+    range of client-server network application needs.
+
+Logical strucure:
+
+    The main components of the netcmd structure are:
+        - The Receiver
+        - The Actor
+        - The Responder
+
+        and the Control Loop
+
+    1. The Control loop
+        The control loop handles accepting and authenticating clients and passes
+        them onto a Receiver which runs in a separate Thread and finishes out the
+        remainder of the Process.
+
+    2. The Receiver
+        The Receiver is a Thread started Controller loop to handle the message reception,
+        actions and return value. Once the full cycle of message processing completes, the
+        Receiver graces hangs up with the clients and its Thread terminates.
+
+    3. The Actor is a custom class which is instantiated or called by the receiver thread
+        from its custom module as defined in the server setup config
+
+    4. The Responder
+        The Responder is responsible for Taking the computer results or answers and returning
+        them to the client
+
+Version 2 of the netcmd structure:
+    Now there are only 2 Main components:
+        - The Control Loop
+        - The Reciever
+
+    1. The Control loops does its old job of dispatching its connections to a receiver
+        Thread.
+
+    2. The Receiver
+        The Receiver now handles the job of both the actor and the responder.
+        (Since there is no reason to split them up.)
+
+Example Server Definition in YAML:
+
+
+messages:
+    hi:
+        ack: Preparing to say hi...
+        action: actions.sayhello
+        error: actions.sayhello.get_response()
+    what_time_is_it:
+        ack: Finding the time for you...
+        action: actions.tell_time
+        error: Unable to tell time.
+
+
+
+
