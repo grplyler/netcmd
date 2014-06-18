@@ -6,10 +6,11 @@ import socket
 import importlib
 import sys
 import binascii
+from time import sleep
 
 # Global settings
 # todo: find a way to store a literal '\r\n' in yaml
-TERM = '\r\n'
+#TERM = '\r\n'
 
 # Debugging test function
 
@@ -28,25 +29,45 @@ class Receiver(threading.Thread):
         # Send connection acknowledgement
         self.sendline('You have connected')
 
+        # Check is authentication is required
+        if config['global']['require_auth']:
+            # Authenticate the user
+            # todo: add a timeout to authentication
+            print("Authenticating client", self.addr)
+            self.sock.send(b'Please enter access password: ')
+            passwd = self.sock.recv(64)
+            passwd = passwd[:-2].decode('UTF-8')
+            if passwd == config['global']['auth_password']:
+                print("Access granted to", self.addr)
+                self.sendline("Access Granted.")
+                self.sendline("Here is a list of available commands:")
+
+                # Send available commands to user
+                self.send_commands()
+            else:
+                print("Access denied for", self.addr)
+                self.sendline("Wrong password!!! Access denied.")
+                self.sendline("Disconnecting...")
+                self.sock.shutdown(0)
+                self.sock.close()
+                self.stopped = True
+
+
         # Wait for incoming message (Loop while client is connected)
         # todo: Perform check from control C sent by the client and disconnect
-        while not stopped:
+        while not self.stopped:
             data = self.sock.recv(1024)
-            print("Received:", data)
-            data = data[:-2]
-            print("Stripped:", data)
-            print(config['messages'])
-            print(data.decode('utf-8'))
+            data = data[:-2].decode('UTF-8')
+            print("Received", data, "from", addr)
 
 
             # Determine what the message means
-            if data.decode('UTF-8') in self.config['messages']:
-                print("Received Command:", data)
-                print("Processing...")
-                self.process_msg(data.decode('utf-8'))
+            if data in self.config['messages']:
+                self.process_msg(data)
 
-            elif data.decode('utf-8') == "quit":
+            elif data == "quit":
                 # Shutdown the Connection and Thread
+                print("Disconnecting", addr)
                 self.sendline('Disconnecting...')
                 self.sock.shutdown(0)
                 self.sock.close()
@@ -55,11 +76,14 @@ class Receiver(threading.Thread):
 
             # Unknown message received
             else:
-                self.sendline('Message not understood, see sever.yaml')
+                print("Unknown message:", data)
+                self.sendline('Message not understood, see server.yaml')
 
+    def send_commands(self):
+        for i in self.config['messages']:
+            self.sendline(i)
 
     def process_msg(self, data):
-        print(data)
         action = self.get_action(self.config['messages'][data]['action'])
 
         # Execute the action function
@@ -96,6 +120,7 @@ if __name__ == "__main__":
     IP = config['global']['bound_ip']
     PORT = config['global']['server_port']
     stopped = False
+    TERM = config['global']['message_terminator']
 
     # Create the sockets
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

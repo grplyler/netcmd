@@ -7,4 +7,6 @@ messages:
 global:
     server_port: 7040
     bound_ip: 0.0.0.0
-    message_terminator: !!str \r\n
+    message_terminator: "\r\n"
+    require_auth: true
+    auth_password: fififofum
