@@ -9,7 +9,9 @@ import binascii
 from time import sleep
 
 # Global settings
-# todo: find a way to store a literal '\r\n' in yaml
+# todo: Write a command and control client for operation pdisk and server nodes to go on the two machines
+# The command a control client should connect to all the servers at once
+# Simple capabilities that a commands and response of the status of pdisk should be available
 #TERM = '\r\n'
 
 # Debugging test function
