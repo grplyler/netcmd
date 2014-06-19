@@ -3,6 +3,13 @@ messages:
         ack: Computing response...
         action: actions.sayhi
         error: Unable to say hi.
+        help: Say hi to the server!
+
+    quit:
+        ack:
+        action:
+        error:
+        help: Quit the session and disconnect
 
 global:
     server_port: 7040

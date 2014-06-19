@@ -37,6 +37,8 @@ class Receiver(threading.Thread):
     def run(self):
         # Send connection acknowledgement
         self.sendline('You have connected')
+        self.sendline('Here is a list of available commands:')
+        self.send_commands()
 
         # Check is authentication is required
         if self.config['global']['require_auth']:
@@ -63,8 +65,6 @@ class Receiver(threading.Thread):
 
 
         # Wait for incoming message (Loop while client is connected)
-        # todo: Perform check from control C sent by the client and disconnect
-        # todo: Use select for asychonus reception off the socket
         # Otherwise the stopped flag doesn't work
         while not self.stopped:
 
@@ -79,16 +79,19 @@ class Receiver(threading.Thread):
                     data = data[:-2].decode('UTF-8')
                     print("Received", data, "from", self.addr)
 
+                    #Process default commands first
+                    if data == "quit":
+                        # Shutdown the Connection and Thread
+                        self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
+                        data = None
+
                     # Determine what the message means
-                    if data in self.config['messages']:
+                    elif data in self.config['messages']:
                         self.process_msg(data)
                         data = None
 
                     # If connection is ended by the client
-                    elif data == "quit":
-                        # Shutdown the Connection and Thread
-                        self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
-                        data = None
+
 
                     # If connection is ended by the server console (Ctrl-C)
                     elif self.stopped:
@@ -119,7 +122,7 @@ class Receiver(threading.Thread):
 
     def send_commands(self):
         for i in self.config['messages']:
-            self.sendline(i)
+            self.sendline("\t" + i + " - " + self.config['messages'][i]['help'])
 
     def process_msg(self, data):
         action = self.get_action(self.config['messages'][data]['action'])
@@ -151,12 +154,15 @@ class Receiver(threading.Thread):
 
 # There server class
 class Server:
-    def __init__(self, name, config):
+    def __init__(self, name, config_filename):
+        with open(config_filename) as configfile:
+            config = yaml.load(configfile.read())
         self.config = config
         self.IP = self.config['global']['bound_ip']
         self.PORT = self.config['global']['server_port']
         self.stopped = False
         self.TERM = self.config['global']['message_terminator']
+
 
 
         # Create the sockets
@@ -170,18 +176,20 @@ class Server:
         self.client_list = []
 
     def run(self):
-
+        # todo: begin implementation for max connections
         while not self.stopped:
             try:
+
                 sock, addr = self.server_sock.accept()
                 # Create the communicator
                 com = os.pipe()
                 print("Accepted connection from", addr)
-                # todo: Authenicate user
                 # Create the receiver thread
                 handle = Receiver(sock, addr, self.config, com)
                 handle.start()
                 self.client_list.append(handle)
+
+
             except(KeyboardInterrupt):
                 print("\nShutting down...")
                 self.stop_handles(self.client_list)
@@ -196,15 +204,13 @@ class Server:
         for i in range(0, len(client_list)):
             os.write(client_list[i].com[1], b'stop')
 
-            # todo: allow for control-c quiting
-
 
 if __name__ == "__main__":
-    with open('server.yml') as configfile:
-        config = yaml.load(configfile.read())
 
     # Create Server
-    server = Server("netcmd server", config)
+    server = Server("netcmd server", 'server.yml')
     server.run()
+
+    print("Done.")
 
 
