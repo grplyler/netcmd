@@ -64,22 +64,17 @@ class Receiver(threading.Thread):
         # todo: Use select for asychonus reception off the socket
         # Otherwise the stopped flag doesn't work
         while not self.stopped:
-            print("looping")
-
             try:
                 inputready, outputready, exceptready = select.select([self.sock], [], [self.sock])
             except (OSError):
                 print("Socket Disconnected")
-
-
-            print("Passed select")
 
             for s in inputready:
                 if s == self.sock:
                     # Do the reading
                     data = self.sock.recv(1024)
                     data = data[:-2].decode('UTF-8')
-                    print("Received", data, "from", addr)
+                    print("Received", data, "from", self.addr)
 
 
             # Determine what the message means
@@ -89,9 +84,7 @@ class Receiver(threading.Thread):
             # If connection is ended by the client
             elif data == "quit":
                 # Shutdown the Connection and Thread
-                print("Disconnecting", addr)
-                self.sendline('Disconnecting...')
-                self.stop()
+                self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
 
             # If connection is ended by the server console (Ctrl-C)
             elif self.stopped:
@@ -142,40 +135,43 @@ class Receiver(threading.Thread):
         func = getattr(mod, func_name)
         return func
 
-# There asyncore server class
-class Server(asyncore.dispatcher):
+# There server class
+class Server:
     def __init__(self, name, config):
-        self.config = config
-        self.IP = self.config['global']['bound_ip']
-        self.PORT = self.config['global']['server_port']
-
-        # Stopping flag
+        self.IP = config['global']['bound_ip']
+        self.PORT = config['global']['server_port']
         self.stopped = False
+        self.TERM = config['global']['message_terminator']
 
-        asyncore.dispatcher.__init__(self)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.bind((IP, PORT))
-        self.listen(10)
+        # Create the sockets
+        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_sock.bind((self.IP, self.PORT))
+        self.server_sock.listen(10)
 
-    def handle_accepted(self, sock, addr):
-        handler =
+        print("netcmd server started on {}:{}".format(config['global']['bound_ip'], config['global']['server_port']))
 
-    def load_config(self, filename):
-        with open(filename, 'r') as configfile:
-            config = yaml.load(configfile.read())
+        self.client_list = []
 
-        return config
+    def run(self):
+
+        while not self.stopped:
+            sock, addr = self.server_sock.accept()
+            print("Accepted connection from", addr)
+            # todo: Authenicate user
+            # Create the receiver thread
+            handeler = Receiver(sock, addr, config)
+            handeler.start()
+            self.client_list.append(handeler)
+
+            # todo: allow for control-c quiting
 
 if __name__ == "__main__":
     with open('server.yaml') as configfile:
         config = yaml.load(configfile.read())
 
-    # Create the server
+    # Creat Server
     server = Server("netcmd server", config)
-
-    # Start the async loop
-    asyncore.loop()
-
-
+    server.run()
 
 
