@@ -36,14 +36,14 @@ class Receiver(threading.Thread):
         self.sendline('You have connected')
 
         # Check is authentication is required
-        if config['global']['require_auth']:
+        if self.config['global']['require_auth']:
             # Authenticate the user
             # todo: add a timeout to authentication
             print("Authenticating client", self.addr)
             self.sock.send(b'Please enter access password: ')
             passwd = self.sock.recv(64)
             passwd = passwd[:-2].decode('UTF-8')
-            if passwd == config['global']['auth_password']:
+            if passwd == self.config['global']['auth_password']:
                 print("Access granted to", self.addr)
                 self.sendline("Access Granted.")
                 self.sendline("Here is a list of available commands:")
@@ -66,35 +66,45 @@ class Receiver(threading.Thread):
         while not self.stopped:
             try:
                 inputready, outputready, exceptready = select.select([self.sock], [], [self.sock])
-            except (OSError):
-                print("Socket Disconnected")
+            except (OSError, ValueError, UnboundLocalError):
+                pass
 
-            for s in inputready:
-                if s == self.sock:
-                    # Do the reading
-                    data = self.sock.recv(1024)
-                    data = data[:-2].decode('UTF-8')
-                    print("Received", data, "from", self.addr)
+            try:
+                for s in inputready:
+                    if s == self.sock:
+                        # Do the reading
+                        try:
+                            data = self.sock.recv(1024)
 
+                            data = data[:-2].decode('UTF-8')
+                            print("Received", data, "from", self.addr)
 
-            # Determine what the message means
-            if data in self.config['messages']:
-                self.process_msg(data)
+                            # Determine what the message means
+                            if data in self.config['messages']:
+                                self.process_msg(data)
 
-            # If connection is ended by the client
-            elif data == "quit":
-                # Shutdown the Connection and Thread
-                self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
+                            # If connection is ended by the client
+                            elif data == "quit":
+                                # Shutdown the Connection and Thread
+                                self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
 
-            # If connection is ended by the server console (Ctrl-C)
-            elif self.stopped:
-                # Stop the connection and thread
-                self.stop()
+                            # If connection is ended by the server console (Ctrl-C)
+                            elif self.stopped:
+                                # Stop the connection and thread
+                                self.stop()
 
-            # Unknown message received
-            else:
-                print("Unknown message:", data)
-                self.sendline('Message not understood, see server.yaml')
+                            # Unknown message received
+                            else:
+                                print("Unknown message:", data)
+                                self.sendline('Message not understood, see server.yml')
+
+                            # erase data
+                            data = None
+                        except(OSError, TypeError):
+                            pass
+
+            except(UnboundLocalError):
+                pass
 
     def stop(self, console_msg, client_reason):
         print(console_msg)
@@ -138,10 +148,11 @@ class Receiver(threading.Thread):
 # There server class
 class Server:
     def __init__(self, name, config):
-        self.IP = config['global']['bound_ip']
-        self.PORT = config['global']['server_port']
+        self.config = config
+        self.IP = self.config['global']['bound_ip']
+        self.PORT = self.config['global']['server_port']
         self.stopped = False
-        self.TERM = config['global']['message_terminator']
+        self.TERM = self.config['global']['message_terminator']
 
         # Create the sockets
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -156,21 +167,32 @@ class Server:
     def run(self):
 
         while not self.stopped:
-            sock, addr = self.server_sock.accept()
-            print("Accepted connection from", addr)
-            # todo: Authenicate user
-            # Create the receiver thread
-            handeler = Receiver(sock, addr, config)
-            handeler.start()
-            self.client_list.append(handeler)
+            try:
+                sock, addr = self.server_sock.accept()
+                print("Accepted connection from", addr)
+                # todo: Authenicate user
+                # Create the receiver thread
+                handle = Receiver(sock, addr, self.config)
+                handle.start()
+                self.client_list.append(handle)
+            except(KeyboardInterrupt):
+                print("\nShutting down...")
+                self.stop_handles(self.client_list)
+                self.stopped = True
+
+    def stop_handles(self, client_list):
+        for i in range(0, len(client_list)):
+            client_list[i].stop("Stopping connection %s" % repr(client_list[i].addr),
+                                "Server stopped at console")
+
 
             # todo: allow for control-c quiting
 
 if __name__ == "__main__":
-    with open('server.yaml') as configfile:
+    with open('server.yml') as configfile:
         config = yaml.load(configfile.read())
 
-    # Creat Server
+    # Create Server
     server = Server("netcmd server", config)
     server.run()
 
