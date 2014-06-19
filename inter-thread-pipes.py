@@ -18,20 +18,20 @@ import socket
 
 
 class MyThread(threading.Thread):
-    def __init__(self, channel):
+    def __init__(self, o):
         threading.Thread.__init__(self)
-        self.channel = channel
+        self.o = o
         self.stopped = False
 
-        self.inputs = [self.channel]
+        self.inputs = [self.o]
 
     def run(self):
         print("Thread-1 Started")
         while not self.stopped:
             inputready, outputready, errors = select.select(self.inputs, [], [])
             for i in inputready:
-                if i == self.channel:
-                    signal = os.read(readable_pipe, 64)
+                if i == self.o:
+                    signal = os.read(self.o, 64)
                     print("The thread received stuff on the pipe: %s" % signal)
                     if signal == b'stop':
                         print("Stop command received.")
@@ -45,17 +45,18 @@ if __name__ == "__main__":
 
     # Create the communication socket (UNIX)
     com = os.pipe()
-    readable_pipe = com[0]
-    writeable_pipe = com[1]
 
-    t = MyThread(readable_pipe)
+
+    # Start the threads
+    t = MyThread(com[0])
     t.start()
 
     stopped = False
 
     while not stopped:
         command = input("Command to send to thread: ")
-        os.write(writeable_pipe, bytes(command, 'UTF-8'))
+        os.write(com[1], bytes('stop', 'UTF-8'))
+        stopped = True
 
 
 

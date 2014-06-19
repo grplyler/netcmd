@@ -8,5 +8,5 @@ global:
     server_port: 7040
     bound_ip: 0.0.0.0
     message_terminator: "\r\n"
-    require_auth: true
+    require_auth: false
     auth_password: hardison

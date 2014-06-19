@@ -4,7 +4,7 @@ import yaml
 import socket
 import importlib
 import select
-
+import os
 
 # Global settings
 # todo: Write a command and control client for operation pdisk and server nodes to go on the two machines
@@ -16,14 +16,21 @@ import select
 
 
 class Receiver(threading.Thread):
-    def __init__(self, sock, addr, config):
+    def __init__(self, sock, addr, config, com):
+        threading.Thread.__init__(self)
         self.sock = sock
         self.addr = addr
         self.config = config
+        self.com = com
+        self.i = com[0] # readable pipe for control thread communication
+
+
+        self.inputs = [self.sock, self.i]
+
         self.stopped = False
         # Need to convert string '\r\n' to literal
         self.TERM = self.config['global']['message_terminator']
-        threading.Thread.__init__(self)
+
 
         #self.socklist = [self.sock, self.signal_sock]
 
@@ -60,44 +67,48 @@ class Receiver(threading.Thread):
         # todo: Use select for asychonus reception off the socket
         # Otherwise the stopped flag doesn't work
         while not self.stopped:
-            try:
-                inputready, outputready, exceptready = select.select([self.sock], [], [self.sock])
 
-                for s in inputready:
-                    if s == self.sock:
-                        # Do the reading
+            inputready, outputready, exceptready = select.select(self.inputs, [], [self.sock])
 
-                        data = self.sock.recv(1024)
+            for s in inputready:
+                if s == self.sock:
+                    # Do the reading
 
-                        data = data[:-2].decode('UTF-8')
-                        print("Received", data, "from", self.addr)
+                    data = self.sock.recv(1024)
 
-                        # Determine what the message means
-                        if data in self.config['messages']:
-                            self.process_msg(data)
-                            data = None
+                    data = data[:-2].decode('UTF-8')
+                    print("Received", data, "from", self.addr)
 
-                        # If connection is ended by the client
-                        elif data == "quit":
-                            # Shutdown the Connection and Thread
-                            self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
-                            data = None
+                    # Determine what the message means
+                    if data in self.config['messages']:
+                        self.process_msg(data)
+                        data = None
 
-                        # If connection is ended by the server console (Ctrl-C)
-                        elif self.stopped:
-                            # Stop the connection and thread
-                            self.stop()
-                            data = None
+                    # If connection is ended by the client
+                    elif data == "quit":
+                        # Shutdown the Connection and Thread
+                        self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
+                        data = None
 
-                        # Unknown message received
-                        else:
-                            print("Unknown message:", data)
-                            self.sendline('Message not understood, see server.yml')
+                    # If connection is ended by the server console (Ctrl-C)
+                    elif self.stopped:
+                        # Stop the connection and thread
+                        self.stop()
+                        data = None
+
+                    # Unknown message received
+                    else:
+                        print("Unknown message:", data)
+                        self.sendline('Message not understood, see server.yml')
+
+                # If the control thread requests termination
+                elif s == self.i:
+                    cmd = os.read(self.i, 64)
+                    if cmd == b'stop':
+                        self.stop("Shutting down receiver thread for %s" % repr(self.addr), "Server stopped at terminal")
 
 
 
-            except (OSError, ValueError, UnboundLocalError):
-                pass
 
     def stop(self, console_msg, client_reason):
         print(console_msg)
@@ -147,6 +158,7 @@ class Server:
         self.stopped = False
         self.TERM = self.config['global']['message_terminator']
 
+
         # Create the sockets
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -162,10 +174,12 @@ class Server:
         while not self.stopped:
             try:
                 sock, addr = self.server_sock.accept()
+                # Create the communicator
+                com = os.pipe()
                 print("Accepted connection from", addr)
                 # todo: Authenicate user
                 # Create the receiver thread
-                handle = Receiver(sock, addr, self.config)
+                handle = Receiver(sock, addr, self.config, com)
                 handle.start()
                 self.client_list.append(handle)
             except(KeyboardInterrupt):
@@ -174,12 +188,16 @@ class Server:
                 self.stopped = True
 
     def stop_handles(self, client_list):
-        for i in range(0, len(client_list)):
-            client_list[i].stop("Stopping connection %s" % repr(client_list[i].addr),
-                                "Server stopped at console")
+       # for i in range(0, len(client_list)):
+            #client_list[i].stop("Stopping connection %s" % repr(client_list[i].addr),
+             #                   "Server stopped at console")
 
+       # For each thread in the client_list, send its com input a 'stop' signal
+        for i in range(0, len(client_list)):
+            os.write(client_list[i].com[1], b'stop')
 
             # todo: allow for control-c quiting
+
 
 if __name__ == "__main__":
     with open('server.yml') as configfile:

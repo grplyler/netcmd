@@ -1,0 +1,4 @@
+Update 1:
+    I managed to use os.pipe pipes to communicate with the receiver threads
+    and penetrate the select.select system call to stop the thread, connection and all
+
