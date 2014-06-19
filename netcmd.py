@@ -1,14 +1,10 @@
 __author__ = 'ryanplyler'
 import threading
-import actions
 import yaml
 import socket
 import importlib
-import sys
-import binascii
-from time import sleep
 import select
-import asyncore
+
 
 # Global settings
 # todo: Write a command and control client for operation pdisk and server nodes to go on the two machines
@@ -66,44 +62,41 @@ class Receiver(threading.Thread):
         while not self.stopped:
             try:
                 inputready, outputready, exceptready = select.select([self.sock], [], [self.sock])
-            except (OSError, ValueError, UnboundLocalError):
-                pass
 
-            try:
                 for s in inputready:
                     if s == self.sock:
                         # Do the reading
-                        try:
-                            data = self.sock.recv(1024)
 
-                            data = data[:-2].decode('UTF-8')
-                            print("Received", data, "from", self.addr)
+                        data = self.sock.recv(1024)
 
-                            # Determine what the message means
-                            if data in self.config['messages']:
-                                self.process_msg(data)
+                        data = data[:-2].decode('UTF-8')
+                        print("Received", data, "from", self.addr)
 
-                            # If connection is ended by the client
-                            elif data == "quit":
-                                # Shutdown the Connection and Thread
-                                self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
-
-                            # If connection is ended by the server console (Ctrl-C)
-                            elif self.stopped:
-                                # Stop the connection and thread
-                                self.stop()
-
-                            # Unknown message received
-                            else:
-                                print("Unknown message:", data)
-                                self.sendline('Message not understood, see server.yml')
-
-                            # erase data
+                        # Determine what the message means
+                        if data in self.config['messages']:
+                            self.process_msg(data)
                             data = None
-                        except(OSError, TypeError):
-                            pass
 
-            except(UnboundLocalError):
+                        # If connection is ended by the client
+                        elif data == "quit":
+                            # Shutdown the Connection and Thread
+                            self.stop("Client %s requested quit" % repr(self.addr), "Disconnecting...")
+                            data = None
+
+                        # If connection is ended by the server console (Ctrl-C)
+                        elif self.stopped:
+                            # Stop the connection and thread
+                            self.stop()
+                            data = None
+
+                        # Unknown message received
+                        else:
+                            print("Unknown message:", data)
+                            self.sendline('Message not understood, see server.yml')
+
+
+
+            except (OSError, ValueError, UnboundLocalError):
                 pass
 
     def stop(self, console_msg, client_reason):
