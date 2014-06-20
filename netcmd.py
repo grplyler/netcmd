@@ -75,7 +75,7 @@ class Receiver(threading.Thread):
                     # Do the reading
 
                     data = self.sock.recv(1024)
-
+                    # todo: fix error where it cannot decode a Ctrl-C from the client
                     data = data[:-2].decode('UTF-8')
                     print("Received", data, "from", self.addr)
 
@@ -87,6 +87,8 @@ class Receiver(threading.Thread):
 
                     # Determine what the message means
                     elif data in self.config['messages']:
+                        # Send command reception acknowledgement
+                        self.send_ack(data)
                         self.process_msg(data)
                         data = None
 
@@ -124,6 +126,10 @@ class Receiver(threading.Thread):
         for i in self.config['messages']:
             self.sendline("\t" + i + " - " + self.config['messages'][i]['help'])
 
+    def send_ack(self, msg):
+        ack = self.config['messages'][msg]['ack']
+        self.sendline(ack)
+
     def process_msg(self, data):
         action = self.get_action(self.config['messages'][data]['action'])
 
@@ -151,6 +157,62 @@ class Receiver(threading.Thread):
         mod = importlib.import_module(mod_name)
         func = getattr(mod, func_name)
         return func
+
+# todo: create the communicator class
+class Communicator:
+    #todo: simplify the Communicator structure to contain both the in and out pipes for the 2 threads
+    # todo: and not rely on the Channel class
+    """ A class that hold two Channel class for two way communication
+        between threads.
+        Example:
+            Thread-1
+            and Thread-2
+
+            Thread 1 is the main thread.
+            For Thread 1 to communicate with Thread-2, he has to send a message on master_send
+            And that value can be read from the Thread-2 with master_recv
+
+            For Thread-2 to send a message back to Thread-1, he has to send a message on slave_send
+            and Thread-1 can receive that message on recv_slave
+
+            Theoretically...
+
+            Diagram:
+                Send:
+                Thread-1 --> Thread-2 use master_send()
+                Recv:
+                Thread-2 <-- Thread-1 use recv_master()
+
+                Send:
+                Thread-2 --> Thread-1 use slave_send()
+                Recv:
+                Thread-1 <-- Thread-2 use recv_slave()
+    """
+
+    def __init__(self, buffer_len=64):
+        self.buffer_len = buffer_len
+        self.pipe1 = os.pipe()
+        self.pipe2 = os.pipe()
+
+        # The two endpoints, a master and a slave
+        self.master_pipeout = self.pipe1[1] # the masters output
+        self.slave_pipein = self.pipe1[0]  # = the slave's input
+
+        self.slave_pipeout = self.pipe2[1] # the slave's output
+        self.master_pipein = self.pipe2[0] # = the master's input
+
+    def send_to_master(self, bytes):
+        os.write(self.slave_pipeout, bytes)
+
+    def send_to_slave(self, bytes):
+        os.write(self.master_pipeout, bytes)
+
+    def recv_from_master(self):
+        return os.read(self.slave_pipein, self.buffer_len)
+
+    def recv_from_slave(self):
+        return os.read(self.master_pipein, self.buffer_len)
+
 
 # There server class
 class Server:
@@ -206,11 +268,9 @@ class Server:
 
 
 if __name__ == "__main__":
-
     # Create Server
     server = Server("netcmd server", 'server.yml')
     server.run()
+    s = Communicator()
 
     print("Done.")
-
-

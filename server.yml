@@ -11,6 +11,7 @@ messages:
         error:
         help: Quit the session and disconnect
 
+
 global:
     server_port: 7040
     bound_ip: 0.0.0.0
