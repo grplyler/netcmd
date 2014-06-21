@@ -1,10 +1,18 @@
 __author__ = 'ryanplyler'
+
+# stdlib imports
 import threading
-import yaml
 import socket
 import importlib
 import select
 import os
+
+# third party imports
+import yaml
+
+# my code imports
+from rcode.ipc.compipes import CommunicatorTwoWay
+
 
 # Global settings
 # todo: Write a command and control client for operation pdisk and server nodes to go on the two machines
@@ -22,10 +30,8 @@ class Receiver(threading.Thread):
         self.addr = addr
         self.config = config
         self.com = com
-        self.i = com[0] # readable pipe for control thread communication
 
-
-        self.inputs = [self.sock, self.i]
+        self.inputs = [self.sock, self.com.slave_pipein]
 
         self.stopped = False
         # Need to convert string '\r\n' to literal
@@ -107,12 +113,10 @@ class Receiver(threading.Thread):
                         self.sendline('Message not understood, see server.yml')
 
                 # If the control thread requests termination
-                elif s == self.i:
-                    cmd = os.read(self.i, 64)
+                elif s == self.com.slave_pipein:
+                    cmd = self.com.recv_from_master()
                     if cmd == b'stop':
                         self.stop("Shutting down receiver thread for %s" % repr(self.addr), "Server stopped at terminal")
-
-
 
 
     def stop(self, console_msg, client_reason):
@@ -158,83 +162,28 @@ class Receiver(threading.Thread):
         func = getattr(mod, func_name)
         return func
 
-# todo: create the communicator class
-class Communicator:
-    #todo: simplify the Communicator structure to contain both the in and out pipes for the 2 threads
-    # todo: and not rely on the Channel class
-    """ A class that hold two Channel class for two way communication
-        between threads.
-        Example:
-            Thread-1
-            and Thread-2
-
-            Thread 1 is the main thread.
-            For Thread 1 to communicate with Thread-2, he has to send a message on master_send
-            And that value can be read from the Thread-2 with master_recv
-
-            For Thread-2 to send a message back to Thread-1, he has to send a message on slave_send
-            and Thread-1 can receive that message on recv_slave
-
-            Theoretically...
-
-            Diagram:
-                Send:
-                Thread-1 --> Thread-2 use master_send()
-                Recv:
-                Thread-2 <-- Thread-1 use recv_master()
-
-                Send:
-                Thread-2 --> Thread-1 use slave_send()
-                Recv:
-                Thread-1 <-- Thread-2 use recv_slave()
-    """
-
-    def __init__(self, buffer_len=64):
-        self.buffer_len = buffer_len
-        self.pipe1 = os.pipe()
-        self.pipe2 = os.pipe()
-
-        # The two endpoints, a master and a slave
-        self.master_pipeout = self.pipe1[1] # the masters output
-        self.slave_pipein = self.pipe1[0]  # = the slave's input
-
-        self.slave_pipeout = self.pipe2[1] # the slave's output
-        self.master_pipein = self.pipe2[0] # = the master's input
-
-    def send_to_master(self, bytes):
-        os.write(self.slave_pipeout, bytes)
-
-    def send_to_slave(self, bytes):
-        os.write(self.master_pipeout, bytes)
-
-    def recv_from_master(self):
-        return os.read(self.slave_pipein, self.buffer_len)
-
-    def recv_from_slave(self):
-        return os.read(self.master_pipein, self.buffer_len)
-
+# Communicator named changed to TwoWay and stored in rcode.ipc.compipes
 
 # There server class
 class Server:
     def __init__(self, name, config_filename):
-        with open(config_filename) as configfile:
-            config = yaml.load(configfile.read())
-        self.config = config
+
+        # Setup config and settings
+        self.config = self.load_config(config_filename)
         self.IP = self.config['global']['bound_ip']
         self.PORT = self.config['global']['server_port']
-        self.stopped = False
         self.TERM = self.config['global']['message_terminator']
 
+        # Status Flags
+        self.stopped = False
 
+        # Create the server socket
+        self.server_sock = self.create_socket(self.IP, self.PORT)
 
-        # Create the sockets
-        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_sock.bind((self.IP, self.PORT))
-        self.server_sock.listen(10)
+        print("netcmd server started on {}:{}".format(self.config['global']['bound_ip'],
+                                                      self.config['global']['server_port']))
 
-        print("netcmd server started on {}:{}".format(config['global']['bound_ip'], config['global']['server_port']))
-
+        # object local storage
         self.client_list = []
 
     def run(self):
@@ -244,7 +193,7 @@ class Server:
 
                 sock, addr = self.server_sock.accept()
                 # Create the communicator
-                com = os.pipe()
+                com = CommunicatorTwoWay(64)
                 print("Accepted connection from", addr)
                 # Create the receiver thread
                 handle = Receiver(sock, addr, self.config, com)
@@ -257,6 +206,22 @@ class Server:
                 self.stop_handles(self.client_list)
                 self.stopped = True
 
+    def create_socket(self, IP, PORT):
+        try:
+            server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_sock.bind((IP, PORT))
+            server_sock.listen(10)
+        except:
+            server_sock = False
+        return server_sock
+
+    def load_config(self, config_filename):
+        with open(config_filename) as configfile:
+            config = yaml.load(configfile.read())
+
+        return config
+
     def stop_handles(self, client_list):
        # for i in range(0, len(client_list)):
             #client_list[i].stop("Stopping connection %s" % repr(client_list[i].addr),
@@ -264,13 +229,12 @@ class Server:
 
        # For each thread in the client_list, send its com input a 'stop' signal
         for i in range(0, len(client_list)):
-            os.write(client_list[i].com[1], b'stop')
+            client_list[i].com.send_to_slave(b'stop')
 
 
 if __name__ == "__main__":
     # Create Server
     server = Server("netcmd server", 'server.yml')
     server.run()
-    s = Communicator()
 
     print("Done.")

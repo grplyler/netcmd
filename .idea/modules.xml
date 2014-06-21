@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/../krowten/.idea/krowten.iml" filepath="$PROJECT_DIR$/../krowten/.idea/krowten.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../libnetcmd.git/.idea/libnetcmd.git.iml" filepath="$PROJECT_DIR$/../libnetcmd.git/.idea/libnetcmd.git.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/netcmd.git.iml" filepath="$PROJECT_DIR$/.idea/netcmd.git.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../rcode/.idea/rcode.iml" filepath="$PROJECT_DIR$/../rcode/.idea/rcode.iml" />
+    </modules>
+  </component>
+</project>
+
